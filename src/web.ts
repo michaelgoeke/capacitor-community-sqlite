@@ -49,9 +49,10 @@ export class CapacitorSQLiteWeb
 
   async saveToStore(options: capSQLiteOptions): Promise<void> {
     const db = this.dbs[options.database!];
-    const data = [...db.export()];
+    const data = db.export();
     const idb = localForage.createInstance({ name: 'sqliteStore', storeName: 'databases' });
-    idb.setItem(options.database!, data);
+    //await idb.removeItem(options.database!);
+    await idb.setItem(options.database!, data);
   }
 
   async getFromLocalDiskToStore(_options: capSQLiteLocalDiskOptions): Promise<void> { throw new Error('Method not implemented.'); }
@@ -61,7 +62,16 @@ export class CapacitorSQLiteWeb
   async createConnection(options: capSQLiteOptions): Promise<void> {
     const idb = localForage.createInstance({ name: 'sqliteStore', storeName: 'databases' });
     const keys = await idb.keys();
-    if (!keys.includes(options.database!)) this.dbs[options.database!] = (new this.SQL.Database());
+    if (!keys.includes(options.database!)){
+      const newDb = new this.SQL.Database();
+      await idb.setItem(options.database!, newDb.export());
+      this.dbs[options.database!] = newDb;
+    }
+    if (!this.dbs[options.database!]) {
+      const existingData = await idb.getItem<Uint8Array>(options.database!);
+      const existingDb = new this.SQL.Database(existingData);
+      this.dbs[options.database!] = existingDb;
+    } 
   }
 
   async open(_options: capSQLiteOptions): Promise<void> { return; }
@@ -71,43 +81,59 @@ export class CapacitorSQLiteWeb
   async close(options: capSQLiteOptions): Promise<void> { this.dbs[options.database!].close(); }
   async getTableList(_options: capSQLiteOptions): Promise<capSQLiteValues> { throw new Error('Method not implemented.'); }
 
-  async execute(options: capSQLiteExecuteOptions): Promise<capSQLiteChanges> {
-    const db = this.dbs[options.database!];
+  async execute(_options: capSQLiteExecuteOptions): Promise<capSQLiteChanges> {
+    throw new Error('Method not implemented.');
+/*     const db = this.dbs[options.database!];
     const result: capSQLiteChanges = { changes: { changes: 0, lastId: 0 } };
     for (const s of options.statements!) {
       result.changes = { changes: (db.exec(s)).length, lastId: 0 };
     }
-    return result;
+    return result; */
   }
 
   async executeSet(options: capSQLiteSetOptions): Promise<capSQLiteChanges> {
     const db = this.dbs[options.database!]
-    let currentSet = {};
+    const result = { changes: { changes: 0, lastId: 0 } };
+    let currentStatement = '';
+    let currentSanitizedValues: any[] = [];
     try {
       for (const s of options.set!) {
-        currentSet = s;
-        const stmt = db.prepare(s.statement!);
-        stmt.get(...(s.values ?? [])); //this seems wrong - reassigning result.changes. But the interface returns only a single on, and the type only have a single `changes` not an array
+        currentStatement = s.statement!;
+        currentSanitizedValues = s.values?.map(v => v == undefined ? null : v == true ? 1 : v == false ? 0 : v) ?? [];
+        db.exec(s.statement!, currentSanitizedValues);
+        result.changes.changes += db.getRowsModified();
       }
-      currentSet = {};
-      return { changes: { changes: 0, lastId: 0 } };
+      currentStatement = '';
+      return result;
     } catch (error) {
-      throw new Error((error as { message: string; }).message + ' ' + JSON.stringify(currentSet));
+      throw new Error((error as { message: string; }).message + ' ' + currentStatement + ' ' + JSON.stringify(currentSanitizedValues));
     }
   }
 
   async run(options: capSQLiteRunOptions): Promise<capSQLiteChanges> { return this.executeSet({ ...options, set: [{ statement: options.statement, values: options.values }] }); }
   async query(options: capSQLiteQueryOptions): Promise<capSQLiteValues> {
-    const db = this.dbs[options.database!];
-    const result: capSQLiteValues = { values: [] };
-    const stmt = db.prepare(options.statement!);
-    result.values!.push(stmt.get(options.values));
-    return result;
+    try{
+      const db = this.dbs[options.database!];
+      const result: { values: any[]} = { values: [] };
+      const sanitizedValues = options.values?.map(v => v == undefined ? null : v == true ? 1 : v == false ? 0 : v) ?? [];
+      
+      const stmt = db.prepare(options.statement!);
+      stmt.bind(sanitizedValues);
+      while (stmt.step()) result.values.push(stmt.getAsObject());
+      stmt.free();
+      return result;
+    } catch (error) {
+      console.log('query error', options, error);
+      throw error;
+    }
   }
   async isDBExists(_options: capSQLiteOptions): Promise<capSQLiteResult> { throw new Error('Method not implemented.'); }
   async isDBOpen(_options: capSQLiteOptions): Promise<capSQLiteResult> { throw new Error('Method not implemented.'); }
   async isDatabase(_options: capSQLiteOptions): Promise<capSQLiteResult> { throw new Error('Method not implemented.'); }
-  async isTableExists(options: capSQLiteTableOptions): Promise<capSQLiteResult> { return { result: (await this.query({ ...options, statement: "SELECT name FROM sqlite_master WHERE type='table' AND name=?;", values: [options.database!] })).values!.length > 0 }; }
+  async isTableExists(options: capSQLiteTableOptions): Promise<capSQLiteResult> {
+    const rows = (await this.query({ ...options, statement: "SELECT name FROM sqlite_master WHERE type='table' AND name=?;", values: [options.table!] })).values!;
+    return { result: rows.length > 0 };
+  }
   async deleteDatabase(_options: capSQLiteOptions): Promise<void> { throw new Error('Method not implemented.'); }
   async isJsonValid(_options: capSQLiteImportOptions): Promise<capSQLiteResult> { throw new Error('Method not implemented.'); }
   async importFromJson(_options: capSQLiteImportOptions): Promise<capSQLiteChanges> { throw new Error('Method not implemented.'); }
