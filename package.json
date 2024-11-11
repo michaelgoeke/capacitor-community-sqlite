@@ -1,5 +1,5 @@
 {
-  "name": "@capacitor-community/sqlite",
+  "name": "@dnvgl/capacitor-community-sqlite",
   "version": "5.0.21",
   "description": "Community plugin for native & electron SQLite databases",
   "main": "dist/plugin.cjs.js",
@@ -15,14 +15,14 @@
     "electron/",
     "CapacitorCommunitySqlite.podspec"
   ],
-  "author": "Jean Pierre Quéau",
+  "author": "DNV & Jean Pierre Quéau",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/capacitor-community/sqlite.git"
+    "url": "git+https://github.com/dnv-opensource/capacitor-community-sqlite.git"
   },
   "bugs": {
-    "url": "https://github.com/capacitor-community/sqlite/issues"
+    "url": "https://github.com/dnv-opensource/capacitor-community-sqlite/issues"
   },
   "keywords": [
     "capacitor",
